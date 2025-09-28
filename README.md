@@ -60,8 +60,8 @@ You only need a modern web browser to run SignalView. No backend server or compl
     git clone https://github.com/PaulW-NZ/SignalView.git
     cd SignalView
     ```
-2.  **Open `index.html`:**
-    Simply open the `index.html` file in your web browser. You can do this by double-clicking the file or by navigating to its path in your browser (e.g., `file:///path/to/SignalView/index.html`).
+2.  **Open `SignalView.html`:**
+    Simply open the `SignalView.html` file in your web browser. You can do this by double-clicking the file or by navigating to its path in your browser (e.g., `file:///path/to/SignalView/SignalView.html`).
 
 ## How to Use
 

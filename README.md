@@ -30,14 +30,14 @@ SignalView is a powerful and intuitive web application designed for interactive 
 ## Features
 - **File Loading:** Supports WAV and raw audio files with configurable sample rates and types for raw data.
 - **Dual Visualization Modes:** Switch between Spectrogram and Waveform displays.
-- **Customizable FFT & Spectrum:
+- **Customizable FFT & Spectrum:**
     - Adjust FFT size, window type (Hann, Hamming, Blackman, Rectangle), and window length.
     - Select spectrum type (Magnitude, Log Magnitude, Power, Log Power, Squared Power).
     - Define dB range for spectrogram visualization.
     - Control hop length for spectrogram time resolution.
 - **Interactive Grid Overlays:** Toggle and customize time and frequency grids with adjustable origin and spacing.
 - **Zooming & Panning:** Navigate through large audio files with pagination controls.
-- **Selection & Markers:
+- **Selection & Markers:**
     - Click and drag to create selections on the display.
     - Click to place a time marker.
     - Context menu (right-click) for selections and markers to perform actions like:
@@ -57,7 +57,7 @@ You only need a modern web browser to run SignalView. No backend server or compl
 ### Running Locally
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/your-username/SignalView.git
+    git clone https://github.com/PaulW-NZ/SignalView.git
     cd SignalView
     ```
 2.  **Open `index.html`:**

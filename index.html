@@ -306,15 +306,17 @@
                                 </div>
                             </div>
                             <div class="toolbar-section">
-                                <label for="displayType">Display:</label>
-                                <select id="displayType" aria-label="Display Type">
-                                    <option value="spectrogram">Spectrogram</option>
-                                    <option value="waveform">Waveform</option>
-                                </select>
+                                <label>Views:</label>
+                                <input type="checkbox" id="viewSpectrogram" checked> <label for="viewSpectrogram" style="margin-right: 10px;">Spectrogram</label>
+                                <input type="checkbox" id="viewWaveform" checked> <label for="viewWaveform">Waveform</label>
                             </div>
                             <div class="toolbar-section">
                                 <label for="waveformAmplitudeScale">Amp Scale:</label>
                                 <input type="number" id="waveformAmplitudeScale" value="1" step="0.1" style="width: 80px;" aria-label="Waveform Amplitude Scale">
+                            </div>
+                            <div class="toolbar-section" id="samplesPerPixelControl" style="display: none;">
+                                <label for="samplesPerPixel">Samples/px:</label>
+                                <input type="number" id="samplesPerPixel" value="10" min="1" max="1000" style="width: 80px;" aria-label="Samples Per Pixel">
                             </div>
                             <div class="toolbar-section">
                                 <label for="displayStartSample">Display Start (spl):</label>
@@ -404,7 +406,7 @@
             <div class="main-content">
                 <div class="viewer-container">
                     <div id="displayContainer">
-                        <div class="message-overlay"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M12,3V5.17C14.31,5.57 16,7.59 16,10C16,12.41 14.31,14.43 12,14.83V17H11V14.83C8.69,14.43 7,12.41 7,10C7,7.59 8.69,5.57 11,5.17V3H12M12,7A3,3 0 0,0 9,10A3,3 0 0,0 12,13A3,3 0 0,0 15,10A3,3 0 0,0 12,7Z" /></svg><h3>No file loaded</h3></div>
+                        <div class="message-overlay" id="message-overlay-wrapper"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M12,3V5.17C14.31,5.57 16,7.59 16,10C16,12.41 14.31,14.43 12,14.83V17H11V14.83C8.69,14.43 7,12.41 7,10C7,7.59 8.69,5.57 11,5.17V3H12M12,7A3,3 0 0,0 9,10A3,3 0 0,0 12,13A3,3 0 0,0 15,10A3,3 0 0,0 12,7Z" /></svg><h3>No file loaded</h3></div>
                     </div>
                     <div class="pagination" id="pagination" style="display: none;">
                         <button class="button" id="prevHalfPage">◀◀</button>
@@ -786,6 +788,8 @@
                 this.dragSensitivity = 0.1;        // New: Adjust this value for desired drag speed
                 
                 this.displayContainer = document.getElementById('displayContainer');
+                this.spectrogramView = null;
+                this.waveformView = null;
                 this.tooltip = document.getElementById('tooltip');
                 this.contextMenu = document.getElementById('contextMenu');
 
@@ -823,20 +827,74 @@
             }
 
             updateControlVisibility() {
-                const displayType = document.getElementById('displayType').value;
+                const spectrogramVisible = document.getElementById('viewSpectrogram').checked;
+                const waveformVisible = document.getElementById('viewWaveform').checked;
+
+                let spectrogramWrapper = document.getElementById('spectrogram-view-wrapper');
+                if (!spectrogramWrapper) {
+                    spectrogramWrapper = document.createElement('div');
+                    spectrogramWrapper.id = 'spectrogram-view-wrapper';
+                    spectrogramWrapper.className = 'view-wrapper';
+                    const specHeader = document.createElement('div');
+                    specHeader.className = 'view-header';
+                    specHeader.innerHTML = '<h4 class="view-title">Spectrogram</h4>';
+                    const specContent = document.createElement('div');
+                    specContent.id = 'spectrogram-view';
+                    specContent.className = 'view-content';
+                    spectrogramWrapper.appendChild(specHeader);
+                    spectrogramWrapper.appendChild(specContent);
+                    this.displayContainer.appendChild(spectrogramWrapper);
+                }
+
+                let waveformWrapper = document.getElementById('waveform-view-wrapper');
+                if (!waveformWrapper) {
+                    waveformWrapper = document.createElement('div');
+                    waveformWrapper.id = 'waveform-view-wrapper';
+                    waveformWrapper.className = 'view-wrapper';
+                    const waveHeader = document.createElement('div');
+                    waveHeader.className = 'view-header';
+                    waveHeader.innerHTML = '<h4 class="view-title">Waveform</h4>';
+                    const waveContent = document.createElement('div');
+                    waveContent.id = 'waveform-view';
+                    waveContent.className = 'view-content';
+                    waveformWrapper.appendChild(waveHeader);
+                    waveformWrapper.appendChild(waveContent);
+                    this.displayContainer.appendChild(waveformWrapper);
+                }
+                
+                this.spectrogramView = document.getElementById('spectrogram-view');
+                this.waveformView = document.getElementById('waveform-view');
+
+                // Add listeners to the newly created views if they don't have them already.
+                if (this.spectrogramView && !this.spectrogramView.dataset.listenersAttached) {
+                    this.spectrogramView.addEventListener('mousedown', this.handleMouseDown.bind(this));
+                    this.spectrogramView.addEventListener('mousemove', this.handleMouseMove.bind(this));
+                    this.spectrogramView.addEventListener('contextmenu', this.handleContextMenu.bind(this));
+                    this.spectrogramView.dataset.listenersAttached = 'true';
+                }
+                if (this.waveformView && !this.waveformView.dataset.listenersAttached) {
+                    this.waveformView.addEventListener('mousedown', this.handleMouseDown.bind(this));
+                    this.waveformView.addEventListener('mousemove', this.handleMouseMove.bind(this));
+                    this.waveformView.addEventListener('contextmenu', this.handleContextMenu.bind(this));
+                    this.waveformView.dataset.listenersAttached = 'true';
+                }
+
+                spectrogramWrapper.style.display = spectrogramVisible ? 'flex' : 'none';
+                spectrogramWrapper.style.flexDirection = 'column';
+                waveformWrapper.style.display = waveformVisible ? 'flex' : 'none';
+                waveformWrapper.style.flexDirection = 'column';
+
                 const fftSpectrumDetails = document.getElementById('fftSpectrumDetails');
                 const freqGridControls = document.getElementById('freqGridControls');
                 const waveformAmplitudeScale = document.getElementById('waveformAmplitudeScale').parentElement;
 
-                if (displayType === 'waveform') {
-                    fftSpectrumDetails.open = false;
-                    fftSpectrumDetails.style.display = 'none';
-                    freqGridControls.style.display = 'none';
-                    waveformAmplitudeScale.style.display = 'flex';
-                } else {
-                    fftSpectrumDetails.style.display = 'block';
-                    freqGridControls.style.display = 'flex';
-                    waveformAmplitudeScale.style.display = 'none';
+                if (fftSpectrumDetails) fftSpectrumDetails.style.display = spectrogramVisible ? 'block' : 'none';
+                if (freqGridControls) freqGridControls.style.display = spectrogramVisible ? 'flex' : 'none';
+                if (waveformAmplitudeScale) waveformAmplitudeScale.style.display = waveformVisible ? 'flex' : 'none';
+
+                const samplesPerPixelControl = document.getElementById('samplesPerPixelControl');
+                if (samplesPerPixelControl) {
+                    samplesPerPixelControl.style.display = (waveformVisible && !spectrogramVisible) ? 'flex' : 'none';
                 }
             }
 
@@ -862,7 +920,7 @@
             }
 
             getCanvasX(sample, startSample, samplesPerRow, width) {
-                if (document.getElementById('displayType').value === 'spectrogram') {
+                if (document.getElementById('viewSpectrogram').checked) {
                     const fftSize = parseInt(document.getElementById('fftSize').value);
                     const hopLength = parseInt(document.getElementById('hopLength').value);
                     if (hopLength <= 0) return 0;
@@ -876,167 +934,165 @@
             }
 
            initializeEventListeners() {
-                document.getElementById('theme-switcher').addEventListener('click', this.toggleTheme.bind(this));
-                document.getElementById('help-button').addEventListener('click', this.openHelpDialog.bind(this));
-                document.querySelector('#help-dialog .popup-close').addEventListener('click', this.closeHelpDialog.bind(this));
+                // --- HEADER & FILE ---
+                document.getElementById('theme-switcher')?.addEventListener('click', this.toggleTheme.bind(this));
+                document.getElementById('help-button')?.addEventListener('click', this.openHelpDialog.bind(this));
+                document.querySelector('#help-dialog .popup-close')?.addEventListener('click', this.closeHelpDialog.bind(this));
+                document.getElementById('fileInput')?.addEventListener('change', this.loadFile.bind(this));
+                document.getElementById('fileFormat')?.addEventListener('change', (e) => {
+                    const rawOpts = document.getElementById('rawOptions');
+                    if (rawOpts) rawOpts.style.display = e.target.value === 'raw' ? 'flex' : 'none';
+                });
 
+                // --- SIDEBAR APPLY BUTTONS & VIEW TOGGLES ---
+                document.getElementById('applyFileDisplay')?.addEventListener('click', this.renderCurrentView.bind(this));
+                document.getElementById('applyFftSpectrum')?.addEventListener('click', this.renderCurrentView.bind(this));
+                document.getElementById('samplesPerPixel')?.addEventListener('input', this.renderCurrentView.bind(this));
+                document.getElementById('viewSpectrogram')?.addEventListener('change', () => { this.updateControlVisibility(); this.renderCurrentView(); });
+                document.getElementById('viewWaveform')?.addEventListener('change', () => { this.updateControlVisibility(); this.renderCurrentView(); });
+
+                // --- GRID CONTROLS ---
+                document.getElementById('timeGridToggle')?.addEventListener('change', this.redrawAllOverlays.bind(this));
+                document.getElementById('freqGridToggle')?.addEventListener('change', this.redrawAllOverlays.bind(this));
+                document.getElementById('timeGridOrigin')?.addEventListener('input', this.redrawAllOverlays.bind(this));
+                document.getElementById('timeGridSpacing')?.addEventListener('input', this.redrawAllOverlays.bind(this));
+                document.getElementById('freqGridOrigin')?.addEventListener('input', this.redrawAllOverlays.bind(this));
+                document.getElementById('freqGridSpacing')?.addEventListener('input', this.redrawAllOverlays.bind(this));
+
+                // --- DETAILS (COLLAPSIBLE SECTIONS) ---
                 document.querySelectorAll('details').forEach(details => {
                     details.addEventListener('toggle', this.saveDetailsState.bind(this));
                 });
 
-                // --- Popup Window Listeners ---
-                const popup = document.getElementById('spectrumPopup');
-                const header = popup.querySelector('.popup-header');
-                const closeBtn = popup.querySelector('.popup-close');
-                const spectrumCanvas = document.getElementById('spectrumCanvas');
+                // --- PAGINATION ---
+                document.getElementById('prevPage')?.addEventListener('click', () => this.changePage(-1));
+                document.getElementById('nextPage')?.addEventListener('click', () => this.changePage(1));
+                document.getElementById('prevHalfPage')?.addEventListener('click', () => this.changePage(-0.5));
+                document.getElementById('nextHalfPage')?.addEventListener('click', () => this.changePage(0.5));
 
-                closeBtn.addEventListener('click', () => popup.style.display = 'none');
-
-                header.addEventListener('mousedown', (e) => {
-                    this.isDraggingPopupWindow = true;
-                    if (popup.style.transform !== 'none') {
-                        const rect = popup.getBoundingClientRect();
-                        popup.style.transform = 'none';
-                        popup.style.left = `${rect.left}px`;
-                        popup.style.top = `${rect.top}px`;
-                    }
-                    this.dragOffset.x = e.clientX - popup.offsetLeft;
-                    this.dragOffset.y = e.clientY - popup.offsetTop;
-                    header.style.cursor = 'grabbing';
-                });
-
-                spectrumCanvas.addEventListener('mousemove', (e) => {
-                    if (this.isDraggingPopupGrid || !this.audioBuffer || !document.getElementById('popupGridToggle').checked) {
-                        spectrumCanvas.style.cursor = this.isDraggingPopupGrid ? 'grabbing' : 'crosshair';
-                        return;
-                    }
-
-                    const rect = spectrumCanvas.getBoundingClientRect();
-                    const y = e.clientY - rect.top;
-                    const padding = { top: 20, right: 20, bottom: 30, left: 50 };
-                    const maxFreq = this.audioBuffer.sampleRate / 2;
-                    const currentFreq = this.getFreqFromY(y, rect.height, padding, maxFreq);
-                    const origin = parseInt(document.getElementById('popupGridOrigin').value);
-                    const spacing = parseInt(document.getElementById('popupGridSpacing').value);
-
-                    const graphHeight = rect.height - padding.top - padding.bottom;
-                    const pixelThreshold = 10; // Increased from 5 pixels for click detection
-
-                    let onDraggableLine = false;
-
-                    // Check origin line
-                    const originY = padding.top + (1 - (origin / maxFreq)) * graphHeight;
-                    if (Math.abs(y - originY) < pixelThreshold) {
-                        onDraggableLine = true;
-                    }
-
-                    // Check other grid lines
-                    if (!onDraggableLine && spacing > 0) {
-                        const lineIndex = Math.round((currentFreq - origin) / spacing);
-                        if (lineIndex !== 0) {
-                            const lineFreq = origin + lineIndex * spacing;
-                            const lineY = padding.top + (1 - (lineFreq / maxFreq)) * graphHeight;
-                            if (Math.abs(y - lineY) < pixelThreshold) {
-                                onDraggableLine = true;
-                            }
-                        }
-                    }
-
-                    spectrumCanvas.style.cursor = onDraggableLine ? 'grab' : 'crosshair';
-                });
-
-                spectrumCanvas.addEventListener('mousedown', (e) => {
-                    if (!this.audioBuffer || !document.getElementById('popupGridToggle').checked) return;
-                    const rect = spectrumCanvas.getBoundingClientRect();
-                    const y = e.clientY - rect.top;
-                    const padding = { top: 20, right: 20, bottom: 30, left: 50 };
-                    const maxFreq = this.audioBuffer.sampleRate / 2;
-                    const currentFreq = this.getFreqFromY(y, rect.height, padding, maxFreq);
-                    const originInput = document.getElementById('popupGridOrigin');
-                    const spacingInput = document.getElementById('popupGridSpacing');
-                    const origin = parseInt(originInput.value);
-                    const spacing = parseInt(spacingInput.value);
-
-                    const graphHeight = rect.height - padding.top - padding.bottom;
-                    const pixelThreshold = 10; // Increased from 5 pixels for click detection
-
-                    // Check origin line
-                    const originY = padding.top + (1 - (origin / maxFreq)) * graphHeight;
-                    if (Math.abs(y - originY) < pixelThreshold) {
-                        this.isDraggingPopupGrid = true;
-                        this.draggedPopupLine = 'origin';
-                        this.initialDragOriginFreq = origin; // Store initial origin
-                        this.initialDragMouseY = e.clientY; // Store initial mouse Y
-                        spectrumCanvas.style.cursor = 'grabbing';
-                        e.preventDefault();
-                        return;
-                    }
-                    // Check other grid lines
-                    if (spacing > 0) {
-                        const lineIndex = Math.round((currentFreq - origin) / spacing);
-                        if (lineIndex !== 0) {
-                            const lineFreq = origin + lineIndex * spacing;
-                            const lineY = padding.top + (1 - (lineFreq / maxFreq)) * graphHeight;
-                            if (Math.abs(y - lineY) < pixelThreshold) {
-                                this.isDraggingPopupGrid = true;
-                                this.draggedPopupLine = lineIndex;
-                                this.initialDragOriginFreq = origin; // Store initial origin
-                                this.initialDragSpacing = spacing; // Store initial spacing
-                                this.initialDragMouseY = e.clientY; // Store initial mouse Y
-                                spectrumCanvas.style.cursor = 'grabbing';
-                                e.preventDefault();
-                                return;
-                            }
-                        }
-                    }
-                });
-
-                // --- Main Display Listeners ---
-                document.getElementById('displayType').addEventListener('change', this.updateControlVisibility.bind(this));
-                document.getElementById('fileInput').addEventListener('change', this.loadFile.bind(this));
-                document.getElementById('fileFormat').addEventListener('change', (e) => {
-                    document.getElementById('rawOptions').style.display = e.target.value === 'raw' ? 'flex' : 'none';
-                });
-                document.getElementById('applyFftSpectrum').addEventListener('click', this.renderCurrentView.bind(this));
-                document.getElementById('applyFileDisplay').addEventListener('click', this.renderCurrentView.bind(this));
-                
-                document.getElementById('timeGridToggle').addEventListener('change', this.redrawAllOverlays.bind(this));
-                document.getElementById('freqGridToggle').addEventListener('change', this.redrawAllOverlays.bind(this));
-                
-                // --- Pagination Listeners ---
-                document.getElementById('prevPage').addEventListener('click', () => this.changePage(-1));
-                document.getElementById('nextPage').addEventListener('click', () => this.changePage(1));
-                document.getElementById('prevHalfPage').addEventListener('click', () => this.changePage(-0.5));
-                document.getElementById('nextHalfPage').addEventListener('click', () => this.changePage(0.5));
-                
-                // --- Popup Control Listeners ---
-                document.getElementById('popupFftSize').addEventListener('change', this.updateSpectrumGraph.bind(this));
-                document.getElementById('popupSpectrumType').addEventListener('change', this.updateSpectrumGraph.bind(this));
-                const popupGridToggle = document.getElementById('popupGridToggle');
-                const popupGridControls = document.getElementById('popupGridControls');
-                const setGridControlsVisibility = () => {
-                    popupGridControls.style.display = popupGridToggle.checked ? 'flex' : 'none';
-                };
-                popupGridToggle.addEventListener('change', setGridControlsVisibility);
-                setGridControlsVisibility();
-                document.getElementById('popupGridOrigin').addEventListener('input', this.updateSpectrumGraph.bind(this));
-                document.getElementById('popupGridSpacing').addEventListener('input', this.updateSpectrumGraph.bind(this));
-
-                // --- Global Listeners ---
-                this.displayContainer.addEventListener('mousedown', this.handleMouseDown.bind(this));
-                this.displayContainer.addEventListener('mousemove', this.handleMouseMove.bind(this));
-                this.displayContainer.addEventListener('contextmenu', this.handleContextMenu.bind(this));
-                
+                // --- GLOBAL MOUSE/WINDOW LISTENERS ---
                 window.addEventListener('mousemove', this.handleWindowMouseMove.bind(this));
                 window.addEventListener('mouseup', this.handleMouseUp.bind(this));
                 window.addEventListener('resize', this.renderCurrentView.bind(this));
                 window.addEventListener('click', (e) => {
-                    // Prevent context menu from closing if the click is inside it
-                    if (!this.contextMenu.contains(e.target)) {
+                    if (this.contextMenu && !this.contextMenu.contains(e.target)) {
                         this.contextMenu.style.display = 'none';
                     }
                 });
-            }
+
+                // --- MAIN DISPLAY CANVAS LISTENERS ---
+                // These are now added in updateControlVisibility after the elements are created.
+                
+                // --- SPECTRUM POPUP LISTENERS ---
+                const popup = document.getElementById('spectrumPopup');
+                if (popup) {
+                    const header = popup.querySelector('.popup-header');
+                    const closeBtn = popup.querySelector('.popup-close');
+                    const spectrumCanvas = document.getElementById('spectrumCanvas');
+
+                    closeBtn?.addEventListener('click', () => popup.style.display = 'none');
+                    header?.addEventListener('mousedown', (e) => {
+                        this.isDraggingPopupWindow = true;
+                        if (popup.style.transform !== 'none') {
+                            const rect = popup.getBoundingClientRect();
+                            popup.style.transform = 'none';
+                            popup.style.left = `${rect.left}px`;
+                            popup.style.top = `${rect.top}px`;
+                        }
+                        this.dragOffset.x = e.clientX - popup.offsetLeft;
+                        this.dragOffset.y = e.clientY - popup.offsetTop;
+                        header.style.cursor = 'grabbing';
+                    });
+
+                    if(spectrumCanvas) {
+                        spectrumCanvas.addEventListener('mousemove', (e) => {
+                            if (this.isDraggingPopupGrid || !this.audioBuffer || !document.getElementById('popupGridToggle')?.checked) {
+                                spectrumCanvas.style.cursor = this.isDraggingPopupGrid ? 'grabbing' : 'crosshair';
+                                return;
+                            }
+                            const rect = spectrumCanvas.getBoundingClientRect();
+                            const y = e.clientY - rect.top;
+                            const padding = { top: 20, right: 20, bottom: 30, left: 50 };
+                            const maxFreq = this.audioBuffer.sampleRate / 2;
+                            const currentFreq = this.getFreqFromY(y, rect.height, padding, maxFreq);
+                            const origin = parseInt(document.getElementById('popupGridOrigin')?.value ?? '0');
+                            const spacing = parseInt(document.getElementById('popupGridSpacing')?.value ?? '1000');
+                            const graphHeight = rect.height - padding.top - padding.bottom;
+                            const pixelThreshold = 10;
+                            let onDraggableLine = false;
+                            const originY = padding.top + (1 - (origin / maxFreq)) * graphHeight;
+                            if (Math.abs(y - originY) < pixelThreshold) {
+                                onDraggableLine = true;
+                            }
+                            if (!onDraggableLine && spacing > 0) {
+                                const lineIndex = Math.round((currentFreq - origin) / spacing);
+                                if (lineIndex !== 0) {
+                                    const lineFreq = origin + lineIndex * spacing;
+                                    const lineY = padding.top + (1 - (lineFreq / maxFreq)) * graphHeight;
+                                    if (Math.abs(y - lineY) < pixelThreshold) {
+                                        onDraggableLine = true;
+                                    }
+                                }
+                            }
+                            spectrumCanvas.style.cursor = onDraggableLine ? 'grab' : 'crosshair';
+                        });
+
+                        spectrumCanvas.addEventListener('mousedown', (e) => {
+                            if (!this.audioBuffer || !document.getElementById('popupGridToggle')?.checked) return;
+                            const rect = spectrumCanvas.getBoundingClientRect();
+                            const y = e.clientY - rect.top;
+                            const padding = { top: 20, right: 20, bottom: 30, left: 50 };
+                            const maxFreq = this.audioBuffer.sampleRate / 2;
+                            const currentFreq = this.getFreqFromY(y, rect.height, padding, maxFreq);
+                            const originInput = document.getElementById('popupGridOrigin');
+                            const spacingInput = document.getElementById('popupGridSpacing');
+                            const origin = parseInt(originInput.value);
+                            const spacing = parseInt(spacingInput.value);
+                            const graphHeight = rect.height - padding.top - padding.bottom;
+                            const pixelThreshold = 10;
+                            const originY = padding.top + (1 - (origin / maxFreq)) * graphHeight;
+                            if (Math.abs(y - originY) < pixelThreshold) {
+                                this.isDraggingPopupGrid = true;
+                                this.draggedPopupLine = 'origin';
+                                this.initialDragOriginFreq = origin;
+                                this.initialDragMouseY = e.clientY;
+                                spectrumCanvas.style.cursor = 'grabbing';
+                                e.preventDefault();
+                                return;
+                            }
+                            if (spacing > 0) {
+                                const lineIndex = Math.round((currentFreq - origin) / spacing);
+                                if (lineIndex !== 0) {
+                                    const lineFreq = origin + lineIndex * spacing;
+                                    const lineY = padding.top + (1 - (lineFreq / maxFreq)) * graphHeight;
+                                    if (Math.abs(y - lineY) < pixelThreshold) {
+                                        this.isDraggingPopupGrid = true;
+                                        this.draggedPopupLine = lineIndex;
+                                        this.initialDragOriginFreq = origin;
+                                        this.initialDragSpacing = spacing;
+                                        this.initialDragMouseY = e.clientY;
+                                        spectrumCanvas.style.cursor = 'grabbing';
+                                        e.preventDefault();
+                                        return;
+                                    }
+                                }
+                            }
+                        });
+                    }
+
+                    document.getElementById('popupFftSize')?.addEventListener('change', this.updateSpectrumGraph.bind(this));
+                    document.getElementById('popupSpectrumType')?.addEventListener('change', this.updateSpectrumGraph.bind(this));
+                    const popupGridToggle = document.getElementById('popupGridToggle');
+                    const popupGridControls = document.getElementById('popupGridControls');
+                    const setGridControlsVisibility = () => {
+                        if(popupGridControls && popupGridToggle) popupGridControls.style.display = popupGridToggle.checked ? 'flex' : 'none';
+                    };
+                    popupGridToggle?.addEventListener('change', setGridControlsVisibility);
+                    setGridControlsVisibility();
+                    document.getElementById('popupGridOrigin')?.addEventListener('input', this.updateSpectrumGraph.bind(this));
+                    document.getElementById('popupGridSpacing')?.addEventListener('input', this.updateSpectrumGraph.bind(this));
+                }
+           }
 
             async loadFile(event) {
                 this.file = event.target.files[0];
@@ -1168,37 +1224,65 @@
             }
 
             renderCurrentView() {
-                if (!this.audioBuffer) return;
-                const displayType = document.getElementById('displayType').value;
-
-                const displayStartSample = parseInt(document.getElementById('displayStartSample').value);
-                if (isNaN(displayStartSample) || displayStartSample < 0) {
-                    document.getElementById('displayStartSample').value = 0;
+                if (!this.audioBuffer) {
+                    this.showMessage("info", "No file loaded");
+                    return;
                 }
 
-                if (displayType === 'spectrogram') {
-                    const fftSize = parseInt(document.getElementById('fftSize').value);
-                    const hopLength = parseInt(document.getElementById('hopLength').value);
-                    const containerWidth = this.displayContainer.getBoundingClientRect().width;
-                    this.samplesPerRow = (containerWidth - 1) * hopLength + fftSize;
-                } else {
-                    this.samplesPerRow = this.audioBuffer.sampleRate;
+                const spectrogramVisible = document.getElementById('viewSpectrogram').checked;
+                const waveformVisible = document.getElementById('viewWaveform').checked;
+                
+                if (!spectrogramVisible && !waveformVisible) {
+                    this.showMessage("info", "No views selected. Check a view in the 'File & Display' panel.");
+                    this.displayContainer.innerHTML = '';
+                    const pagination = document.getElementById("pagination");
+                    if(pagination) pagination.style.display = "none";
+                    return;
+                }
+                
+                const messageOverlay = document.getElementById('message-overlay-wrapper');
+                if (messageOverlay) messageOverlay.style.display = 'none';
+
+                const displayStartSampleEl = document.getElementById('displayStartSample');
+                if(displayStartSampleEl) {
+                    const displayStartSample = parseInt(displayStartSampleEl.value);
+                    if (isNaN(displayStartSample) || displayStartSample < 0) {
+                        displayStartSampleEl.value = 0;
+                    }
                 }
 
-                this.showLoadingOverlay(`Generating ${displayType}...`);
+                this.showLoadingOverlay(`Generating views...`);
                 
                 setTimeout(() => {
-                    this.displayContainer.innerHTML = '';
-                    const containerHeight = Math.max(400, window.innerHeight - 300);
-                    if (displayType === 'spectrogram') {
+                    // This must be inside the timeout to get the correct width after layout changes.
+                    const containerWidth = this.displayContainer.getBoundingClientRect().width;
+                    if (spectrogramVisible) {
                         const fftSize = parseInt(document.getElementById('fftSize').value);
-                        this.rowsPerPage = Math.floor(containerHeight / (fftSize / 2)) || 1;
-                    } else {
-                        this.rowsPerPage = Math.floor(containerHeight / 150) || 1;
+                        const hopLength = parseInt(document.getElementById('hopLength').value);
+                        this.samplesPerRow = (containerWidth > 1 ? (containerWidth - 1) : 0) * hopLength + fftSize;
+                    } else { // Only waveform is visible
+                        const samplesPerPixel = parseInt(document.getElementById('samplesPerPixel').value) || 10;
+                        this.samplesPerRow = containerWidth * samplesPerPixel;
                     }
-                    
-                    if (displayType === 'waveform') this.renderWaveformView();
-                    else this.renderSpectrogramView();
+
+                    if(this.spectrogramView) this.spectrogramView.innerHTML = '';
+                    if(this.waveformView) this.waveformView.innerHTML = '';
+
+                    const containerHeight = Math.max(400, window.innerHeight - 300);
+                    const numVisibleViews = (spectrogramVisible ? 1 : 0) + (waveformVisible ? 1 : 0);
+                    const heightPerView = numVisibleViews > 0 ? containerHeight / numVisibleViews : containerHeight;
+
+                    if (waveformVisible && spectrogramVisible) {
+                        this.renderWaveformView(1, containerWidth);
+                        this.renderSpectrogramView(1, containerWidth);
+                    } else if (waveformVisible) {
+                        const waveformRows = Math.floor(heightPerView / 150) || 1;
+                        this.renderWaveformView(waveformRows, containerWidth);
+                    } else if (spectrogramVisible) {
+                        const fftSize = parseInt(document.getElementById('fftSize').value);
+                        const spectrogramRows = Math.floor(heightPerView / (fftSize / 2)) || 1;
+                        this.renderSpectrogramView(spectrogramRows, containerWidth);
+                    }
                     
                     this.updatePagination();
                     this.redrawAllOverlays();
@@ -1347,10 +1431,12 @@
 
                 let content = `Time: ${time.toFixed(3)}s<br>Sample: ${currentSample}`;
 
-                if (document.getElementById('displayType').value === 'waveform') {
+                const viewContent = event.target.closest('.view-content');
+
+                if (document.getElementById('viewWaveform').checked && viewContent && viewContent.id === 'waveform-view') {
                     const amplitude = ((1 - y / rect.height) * 2 - 1).toFixed(3);
                     content += `<br>Amplitude: ${amplitude}`;
-                } else {
+                } else if (document.getElementById('viewSpectrogram').checked && viewContent && viewContent.id === 'spectrogram-view') {
                     const fftSize = parseInt(document.getElementById('fftSize').value);
                     const freq = Math.floor((1 - y / rect.height) * (fftSize / 2)) * (sampleRate / fftSize);
                     content += `<br>Frequency: ${freq.toFixed(0)} Hz`;
@@ -1437,7 +1523,9 @@
                 const x = event.clientX - rect.left;
                 const startSampleOfRow = parseInt(row.dataset.startSample);
 
-                if (document.getElementById('displayType').value === 'spectrogram') {
+                const isSpectrogramVisible = document.getElementById('viewSpectrogram').checked;
+
+                if (isSpectrogramVisible) {
                     const fftSize = parseInt(document.getElementById('fftSize').value);
                     const hopLength = parseInt(document.getElementById('hopLength').value);
                     if (hopLength <= 0) return startSampleOfRow;
@@ -1546,20 +1634,20 @@
                 return new Blob([view], { type: 'audio/wav' });
             }
 
-            renderWaveformView() {
+            renderWaveformView(rows, width) {
                 const totalSamples = this.audioBuffer.length;
                 const displayStartSample = parseInt(document.getElementById('displayStartSample').value);
                 const startSampleOfPage = displayStartSample;
-                for (let i = 0; i < this.rowsPerPage; i++) {
+                for (let i = 0; i < rows; i++) {
                     const rowStartSample = startSampleOfPage + (i * this.samplesPerRow);
                     if (rowStartSample >= totalSamples) break;
                     const segment = this.audioBuffer.getChannelData(0).slice(rowStartSample, Math.min(rowStartSample + this.samplesPerRow, totalSamples));
-                    const canvases = this.createCanvasSet(i, rowStartSample);
-                    this.drawWaveform(canvases.data, segment, this.samplesPerRow);
+                    const canvases = this.createCanvasSet(i, rowStartSample, width, 150);
+                    if (canvases) this.drawWaveform(canvases.data, segment, this.samplesPerRow);
                 }
             }
 
-            renderSpectrogramView() {
+            renderSpectrogramView(rows, width) {
                 const displayStartSample = parseInt(document.getElementById('displayStartSample').value);
                 const startSampleOfPage = displayStartSample;
                 let pageMinDb = Infinity, pageMaxDb = -Infinity;
@@ -1569,36 +1657,46 @@
                 const expectedNumTimeBins = Math.floor((this.samplesPerRow - fftSize) / hopLength) + 1;
                 const canvasHeight = fftSize / 2;
 
-                for (let i = 0; i < this.rowsPerPage; i++) {
+                for (let i = 0; i < rows; i++) {
                     const rowStartSample = startSampleOfPage + (i * this.samplesPerRow);
                     if (rowStartSample >= this.audioBuffer.length) break;
                     const segment = this.audioBuffer.getChannelData(0).slice(rowStartSample, Math.min(rowStartSample + this.samplesPerRow, this.audioBuffer.length));
-                    const canvases = this.createCanvasSet(i, rowStartSample, null, canvasHeight);
-                    const { spectrogram, minDb, maxDb } = this.generateSpectrogram(segment);
-                    pageMinDb = Math.min(pageMinDb, minDb);
-                    pageMaxDb = Math.max(pageMaxDb, maxDb);
-                    pageRowInfo.push({ dataCanvas: canvases.data, bins: spectrogram });
+                    const canvases = this.createCanvasSet(i, rowStartSample, width, canvasHeight);
+                    if (canvases) {
+                        const { spectrogram, minDb, maxDb } = this.generateSpectrogram(segment);
+                        pageMinDb = Math.min(pageMinDb, minDb);
+                        pageMaxDb = Math.max(pageMaxDb, maxDb);
+                        pageRowInfo.push({ dataCanvas: canvases.data, bins: spectrogram });
+                    }
                 }
                 pageRowInfo.forEach(info => this.drawSpectrogram(info.dataCanvas, info.bins, pageMinDb, pageMaxDb, expectedNumTimeBins));
             }
 
             createCanvasSet(rowIndex, startSample, canvasWidth, canvasHeight) {
+                const finalCanvasHeight = canvasHeight || 150;
+                // Determine parent view based on height. Waveform is 150, spectrogram is a different value.
+                const parent = (finalCanvasHeight === 150) ? this.waveformView : this.spectrogramView;
+                
+                if (!parent) return; // Do not create canvas if the parent view is not active
+
                 const wrapper = document.createElement('div');
                 wrapper.className = 'canvas-wrapper';
                 wrapper.dataset.rowIndex = rowIndex;
                 wrapper.dataset.startSample = startSample;
+                
                 const dataCanvas = document.createElement('canvas');
                 dataCanvas.className = 'data-canvas';
+                
                 const overlayCanvas = document.createElement('canvas');
                 overlayCanvas.className = 'overlay-canvas';
+                
                 wrapper.appendChild(dataCanvas);
                 wrapper.appendChild(overlayCanvas);
-                this.displayContainer.appendChild(wrapper);
+                parent.appendChild(wrapper);
 
                 const dpr = window.devicePixelRatio || 1;
                 const rect = wrapper.getBoundingClientRect();
                 const finalCanvasWidth = canvasWidth || rect.width;
-                const finalCanvasHeight = canvasHeight || 150;
 
                 wrapper.style.height = `${finalCanvasHeight}px`;
 
@@ -1820,6 +1918,9 @@
                     ctx.strokeStyle = 'white';
                     ctx.lineWidth = 1;
 
+                    const viewContent = canvas.closest('.view-content');
+                    const isSpectrogramCanvas = viewContent && viewContent.id === 'spectrogram-view';
+
                     // Time Grid (Vertical)
                     if (timeGridToggle.checked && timeGridSpacing > 0) {
                         const startSample = parseInt(canvas.parentElement.dataset.startSample);
@@ -1852,7 +1953,7 @@
                     }
 
                     // Frequency Grid (Horizontal)
-                    if (freqGridToggle.checked && freqGridSpacing > 0 && document.getElementById('displayType').value === 'spectrogram') {
+                    if (isSpectrogramCanvas && freqGridToggle.checked && freqGridSpacing > 0) {
                         const sampleRate = this.audioBuffer.sampleRate;
                         const maxFreq = sampleRate / 2;
 

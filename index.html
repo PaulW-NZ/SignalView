@@ -242,6 +242,15 @@
             padding: 10px;
             flex-grow: 1;
         }
+        .trace-gap {
+        margin-bottom: 10px;          /* gap between traces */
+        }
+        .file-label {
+        font-size: 0.85em;
+        font-weight: 600;
+        color: var(--text-secondary);
+        margin: 4px 0 2px 4px;
+        }
         #spectrumCanvas {
             width: 100%;
             height: 250px;
@@ -280,6 +289,20 @@
                                     <option value="raw">Raw</option>
                                 </select>
                             </div>
+                            <!-- just after the first file button -->
+<div class="toolbar-section">
+<label for="dualModeToggle">Dual mode:</label>
+<input type="checkbox" id="dualModeToggle">
+</div>
+
+<div class="toolbar-section" id="secondFileRow" style="display:none">
+<label for="fileInput2">File 2:</label>
+<div class="file-input-wrapper">
+    <input type="file" id="fileInput2" accept="audio/wav,.wav,.raw">
+    <button class="button file-button"
+            onclick="document.getElementById('fileInput2').click()">Choose 2nd File</button>
+</div>
+</div>
                             <div class="toolbar-section">
                                 <label for="fileInput">File:</label>
                                 <div class="file-input-wrapper">
@@ -501,23 +524,35 @@
                 document.getElementById('loadingOverlay').style.display = 'none';
             }
 
-            showSpectrumPopup(startSample, endSample) {
+            makeLabelledWrapper(parent, labelText, addGap = false) {
+                const wrap = document.createElement('div');
+                if (addGap) wrap.classList.add('trace-gap');
+
+                const lbl = document.createElement('div');
+                lbl.className = 'file-label';
+                lbl.textContent = labelText;
+                wrap.appendChild(lbl);
+
+                parent.appendChild(wrap);
+                return wrap;          // ← caller appends canvases into this wrapper
+            }
+
+            showSpectrumPopup(startSample, endSample, bothFiles = false) {
                 this.popupSampleRange = { start: startSample, end: endSample };
+                this.popupBothFiles   = bothFiles && this.dualMode;   // new flag
                 const popup = document.getElementById('spectrumPopup');
-                // Reset position for centering before showing
-                popup.style.left = '50%';
-                popup.style.top = '50%';
-                popup.style.transform = 'translate(-50%, -50%)';
+                popup.style.left = '50%'; popup.style.top = '50%';
+                popup.style.transform = 'translate(-50%,-50%)';
                 popup.style.display = 'flex';
                 this.updateSpectrumGraph();
             }
 
-            calculateAverageSpectrum(startSample, endSample, fftSize, spectrumType) {
-                if (!this.audioBuffer) return null;
+            calculateAverageSpectrum(startSample, endSample, fftSize, spectrumType, buffer = this.audioBuffer) {
+                if (!buffer) return null;
 
                 const hopLength = fftSize / 2;
                 const windowFunc = this.createWindow('hann', fftSize, fftSize);
-                const channelData = this.audioBuffer.getChannelData(0);
+                const channelData = buffer.getChannelData(0);
                 
                 let averagedPowerSpectrum = new Float32Array(fftSize / 2).fill(0);
                 let spectrumCount = 0;
@@ -568,155 +603,297 @@
                 return finalSpectrum;
             }
 
-             drawSpectrumGraph(spectrumData, sampleRate, fftSize, spectrumType) {
-                 const canvas = document.getElementById('spectrumCanvas');
-                 const dpr = window.devicePixelRatio || 1;
-                 const rect = canvas.getBoundingClientRect();
-                 canvas.width = rect.width * dpr;
-                 canvas.height = rect.height * dpr;
-                 const ctx = canvas.getContext('2d');
-                 ctx.scale(dpr, dpr);
-                 const width = rect.width;
-                 const height = rect.height;
+            drawSpectrumGraph(spectrumData, sampleRate, fftSize, spectrumType, secondData = null) {
+                const canvas = document.getElementById('spectrumCanvas');
+                const dpr = window.devicePixelRatio || 1;
+                const rect = canvas.getBoundingClientRect();
+                canvas.width  = rect.width  * dpr;
+                canvas.height = rect.height * dpr;
+                const ctx = canvas.getContext('2d');
+                ctx.scale(dpr, dpr);
+                const W = rect.width, H = rect.height;
+                ctx.clearRect(0, 0, W, H);
 
-                 ctx.clearRect(0, 0, width, height);
 
-                 if (!spectrumData) {
-                     ctx.fillStyle = 'white';
-                     ctx.textAlign = 'center';
-                     ctx.fillText("Could not compute spectrum for this range.", width / 2, height / 2);
-                     return;
-                 }
+                if (!spectrumData && !secondData) {   // both buffers empty
+    ctx.fillStyle = 'white';
+    ctx.textAlign = 'center';
+    ctx.fillText('Could not compute spectrum for this range.', W / 2, H / 2);
+    return;
+}
 
-                 // Find min/max for y-axis scaling
-                 let minVal = Infinity;
-                 let maxVal = -Infinity;
-                 for (const val of spectrumData) {
-                     if (isFinite(val)) {
-                         minVal = Math.min(minVal, val);
-                         maxVal = Math.max(maxVal, val);
-                     }
-                 }
-                 if (minVal === Infinity) { // Default values if spectrum is all -Infinity or NaN
-                     minVal = 0; maxVal = 1;
-                     if (spectrumType.includes('log')) {
-                          minVal = -100; maxVal = 0;
-                     }
-                 }
 
-                 const yRange = maxVal - minVal;
-                 const padding = { top: 20, right: 20, bottom: 30, left: 50 };
 
-                 // Draw axes
-                 ctx.strokeStyle = 'white';
-                 ctx.fillStyle = 'white';
-                 ctx.lineWidth = 1;
-                 ctx.font = '10px Segoe UI';
+                /* ----------  find min / max over curves that exist  ---------- */
+let minVal =  Infinity;
+let maxVal = -Infinity;
 
-                 // Y-axis
-                 ctx.beginPath();
-                 ctx.moveTo(padding.left, padding.top);
-                 ctx.lineTo(padding.left, height - padding.bottom);
-                 ctx.stroke();
-                 for (let i = 0; i <= 5; i++) {
-                     const val = maxVal - (i / 5) * yRange;
-                     const y = padding.top + (i / 5) * (height - padding.top - padding.bottom);
-                     ctx.fillText(val.toPrecision(3), padding.left - 45, y + 3);
-                 }
-                 ctx.save();
-                 ctx.translate(padding.left - 40, height / 2);
-                 ctx.rotate(-Math.PI / 2);
-                 ctx.textAlign = 'center';
-                 let yAxisLabel = 'Value';
-                 if (spectrumType === 'log-power') yAxisLabel = 'Power (dB)';
-                 if (spectrumType === 'power') yAxisLabel = 'Power';
-                 if (spectrumType === 'log-magnitude') yAxisLabel = 'Magnitude (dB)';
-                 if (spectrumType === 'magnitude') yAxisLabel = 'Magnitude';
-                 ctx.fillText(yAxisLabel, 0, 0);
-                 ctx.restore();
+if (spectrumData) {               // file-1 curve
+    for (const val of spectrumData) {
+        if (isFinite(val)) {
+            minVal = Math.min(minVal, val);
+            maxVal = Math.max(maxVal, val);
+        }
+    }
+}
+if (secondData) {                 // file-2 curve
+    for (const val of secondData) {
+        if (isFinite(val)) {
+            minVal = Math.min(minVal, val);
+            maxVal = Math.max(maxVal, val);
+        }
+    }
+}
+if (!isFinite(minVal)) {          // both buffers empty or all -Infinity
+    minVal = spectrumType.includes('log') ? -100 : 0;
+    maxVal = 0;
+}
 
-                 // X-axis (Frequency)
-                 const maxFreq = sampleRate / 2;
-                 ctx.beginPath();
-                 ctx.moveTo(padding.left, height - padding.bottom);
-                 ctx.lineTo(width - padding.right, height - padding.bottom);
-                 ctx.stroke();
-                 for (let i = 0; i <= 5; i++) {
-                     const freq = (i / 5) * maxFreq;
-                     const x = padding.left + (i / 5) * (width - padding.left - padding.right);
-                     ctx.fillText(`${(freq / 1000).toFixed(1)}k`, x - 10, height - padding.bottom + 15);
-                 }
-                 ctx.textAlign = 'center';
-                 ctx.fillText('Frequency (Hz)', width / 2, height - 5);
 
-                 // Draw frequency grid
-                 ctx.save();
-                 const gridToggle = document.getElementById('popupGridToggle');
-                 if (gridToggle.checked) {
-                     const gridOrigin = parseInt(document.getElementById('popupGridOrigin').value);
-                     const gridSpacing = parseInt(document.getElementById('popupGridSpacing').value);
+                const yRange = maxVal - minVal;
+                const padding = { top: 20, right: 20, bottom: 30, left: 50 };
+                    this.drawSpectrumAxes(ctx, W, H, padding, spectrumType);   // existing helper
 
-                     if (gridSpacing > 0) {
-                         ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-                         ctx.lineWidth = 1;
 
-                         // Draw lines after origin
-                         for (let f = gridOrigin; f <= maxFreq; f += gridSpacing) {
-                             if (f >= 0) {
-                                 const x = padding.left + (f / maxFreq) * (width - padding.left - padding.right);
-                                 ctx.beginPath();
-                                 ctx.moveTo(x, padding.top);
-                                 ctx.lineTo(x, height - padding.bottom);
-                                 ctx.stroke();
-                             }
-                         }
-                         // Draw lines before origin
-                         for (let f = gridOrigin - gridSpacing; f >= 0; f -= gridSpacing) {
-                             const x = padding.left + (f / maxFreq) * (width - padding.left - padding.right);
-                             ctx.beginPath();
-                             ctx.moveTo(x, padding.top);
-                             ctx.lineTo(x, height - padding.bottom);
-                             ctx.stroke();
-                         }
-                     }
-                 }
-                 ctx.restore();
 
-                 // Draw spectrum line
-                 ctx.strokeStyle = 'var(--accent-primary)';
-                 ctx.lineWidth = 2;
-                 ctx.beginPath();
-                 for (let i = 0; i < spectrumData.length; i++) {
-                     const freq = (i / spectrumData.length) * maxFreq;
-                     const x = padding.left + (freq / maxFreq) * (width - padding.left - padding.right);
+/*
+                // Draw axes
+                ctx.strokeStyle = 'white';
+                ctx.fillStyle = 'white';
+                ctx.lineWidth = 1;
+                ctx.font = '10px Segoe UI';
 
-                     const val = spectrumData[i];
-                     let y = padding.top + ((maxVal - val) / yRange) * (height - padding.top - padding.bottom);
-                     if (yRange === 0) {
-                         y = height / 2;
-                     }
+                // Y-axis
+                ctx.beginPath();
+                ctx.moveTo(padding.left, padding.top);
+                ctx.lineTo(padding.left, height - padding.bottom);
+                ctx.stroke();
+                for (let i = 0; i <= 5; i++) {
+                    const val = maxVal - (i / 5) * yRange;
+                    const y = padding.top + (i / 5) * (height - padding.top - padding.bottom);
+                    ctx.fillText(val.toPrecision(3), padding.left - 45, y + 3);
+                }
+                ctx.save();
+                ctx.translate(padding.left - 40, height / 2);
+                ctx.rotate(-Math.PI / 2);
+                ctx.textAlign = 'center';
+                let yAxisLabel = 'Value';
+                if (spectrumType === 'log-power') yAxisLabel = 'Power (dB)';
+                if (spectrumType === 'power') yAxisLabel = 'Power';
+                if (spectrumType === 'log-magnitude') yAxisLabel = 'Magnitude (dB)';
+                if (spectrumType === 'magnitude') yAxisLabel = 'Magnitude';
+                ctx.fillText(yAxisLabel, 0, 0);
+                ctx.restore();
 
-                     if (i === 0) {
-                         ctx.moveTo(x, y);
-                     } else {
-                         ctx.lineTo(x, y);
-                     }
-                 }
-                 ctx.stroke();
-             }
+                // X-axis (Frequency)
+                const maxFreq = sampleRate / 2;
+                ctx.beginPath();
+                ctx.moveTo(padding.left, height - padding.bottom);
+                ctx.lineTo(width - padding.right, height - padding.bottom);
+                ctx.stroke();
+                for (let i = 0; i <= 5; i++) {
+                    const freq = (i / 5) * maxFreq;
+                    const x = padding.left + (i / 5) * (width - padding.left - padding.right);
+                    ctx.fillText(`${(freq / 1000).toFixed(1)}k`, x - 10, height - padding.bottom + 15);
+                }
+                ctx.textAlign = 'center';
+                ctx.fillText('Frequency (Hz)', width / 2, height - 5);
+
+                // Draw frequency grid
+                ctx.save();
+                const gridToggle = document.getElementById('popupGridToggle');
+                if (gridToggle.checked) {
+                    const gridOrigin = parseInt(document.getElementById('popupGridOrigin').value);
+                    const gridSpacing = parseInt(document.getElementById('popupGridSpacing').value);
+
+                    if (gridSpacing > 0) {
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+                        ctx.lineWidth = 1;
+
+                        // Draw lines after origin
+                        for (let f = gridOrigin; f <= maxFreq; f += gridSpacing) {
+                            if (f >= 0) {
+                                const x = padding.left + (f / maxFreq) * (width - padding.left - padding.right);
+                                ctx.beginPath();
+                                ctx.moveTo(x, padding.top);
+                                ctx.lineTo(x, height - padding.bottom);
+                                ctx.stroke();
+                            }
+                        }
+                        // Draw lines before origin
+                        for (let f = gridOrigin - gridSpacing; f >= 0; f -= gridSpacing) {
+                            const x = padding.left + (f / maxFreq) * (width - padding.left - padding.right);
+                            ctx.beginPath();
+                            ctx.moveTo(x, padding.top);
+                            ctx.lineTo(x, height - padding.bottom);
+                            ctx.stroke();
+                        }
+                    }
+                }
+                ctx.restore();
+*.
+
+
+                // Draw spectrum line
+                ctx.strokeStyle = 'var(--accent-primary)'; // blue
+                ctx.lineWidth = 2;
+                this.drawSingleCurve(ctx, spectrumData, W, H, padding, spectrumType);
+
+                /* ----------  second curve (file 2) if wanted  ---------- */
+
+
+                // Draw first curve (blue) when we have it
+                if (spectrumData) {
+                    ctx.strokeStyle = 'var(--accent-primary)';
+                    ctx.lineWidth = 2;
+                    this.drawSingleCurve(ctx, spectrumData, W, H, padding, spectrumType);
+                }
+
+// Draw second curve (orange) when we have it
+               if (secondData) {
+                   ctx.strokeStyle = '#ff9b2a';
+                   ctx.lineWidth = 2;
+                   this.drawSingleCurve(ctx, secondData, W, H, padding, spectrumType);
+               }
+
+
+
+            }
+
+            /*  ----------  draw axes / grid / labels  ----------  */
+            drawSpectrumAxes(ctx, W, H, padding, spectrumType) {
+                const maxFreq = this.audioBuffer.sampleRate / 2;
+
+                /*  y-axis  */
+                ctx.strokeStyle = 'white';
+                ctx.fillStyle   = 'white';
+                ctx.lineWidth   = 1;
+                ctx.font        = '10px Segoe UI';
+
+                ctx.beginPath();
+                ctx.moveTo(padding.left, padding.top);
+                ctx.lineTo(padding.left, H - padding.bottom);
+                ctx.stroke();
+
+                /*  y ticks  */
+                let yLabel = 'Value';
+                if (spectrumType === 'log-power') yLabel = 'Power (dB)';
+                if (spectrumType === 'power') yLabel = 'Power';
+                if (spectrumType === 'log-magnitude') yLabel = 'Magnitude (dB)';
+                if (spectrumType === 'magnitude') yLabel = 'Magnitude';
+
+                for (let i = 0; i <= 5; i++) {
+                    const y = padding.top + (i / 5) * (H - padding.top - padding.bottom);
+                    ctx.fillText((i * 20 - 100).toFixed(0), padding.left - 45, y + 3); // dummy -100..0 dB
+                }
+                ctx.save();
+                ctx.translate(padding.left - 40, H / 2);
+                ctx.rotate(-Math.PI / 2);
+                ctx.textAlign = 'center';
+                ctx.fillText(yLabel, 0, 0);
+                ctx.restore();
+
+                /*  x-axis  */
+                ctx.beginPath();
+                ctx.moveTo(padding.left, H - padding.bottom);
+                ctx.lineTo(W - padding.right, H - padding.bottom);
+                ctx.stroke();
+
+                for (let i = 0; i <= 5; i++) {
+                    const freq = (i / 5) * maxFreq;
+                    const x = padding.left + (i / 5) * (W - padding.left - padding.right);
+                    ctx.fillText(`${(freq / 1000).toFixed(1)}k`, x - 10, H - padding.bottom + 15);
+                }
+                ctx.textAlign = 'center';
+                ctx.fillText('Frequency (Hz)', W / 2, H - 5);
+
+                /*  optional frequency grid  */
+                const gridToggle = document.getElementById('popupGridToggle');
+                if (gridToggle && gridToggle.checked) {
+                    const origin = parseInt(document.getElementById('popupGridOrigin').value);
+                    const spacing = parseInt(document.getElementById('popupGridSpacing').value);
+                    if (spacing > 0) {
+                        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+                        ctx.lineWidth   = 1;
+                        for (let f = origin; f <= maxFreq; f += spacing) {
+                            const x = padding.left + (f / maxFreq) * (W - padding.left - padding.right);
+                            ctx.beginPath(); ctx.moveTo(x, padding.top); ctx.lineTo(x, H - padding.bottom); ctx.stroke();
+                        }
+                        for (let f = origin - spacing; f >= 0; f -= spacing) {
+                            const x = padding.left + (f / maxFreq) * (W - padding.left - padding.right);
+                            ctx.beginPath(); ctx.moveTo(x, padding.top); ctx.lineTo(x, H - padding.bottom); ctx.stroke();
+                        }
+                    }
+                }
+            }
+
+            /*  draw one curve – used for file-1 (blue) and file-2 (orange) */
+            drawSingleCurve(ctx, data, W, H, padding, spectrumType) {
+                if (!data || data.length === 0) return;
+
+                /*  find min / max for vertical scaling  */
+                let minVal =  Infinity;
+                let maxVal = -Infinity;
+                for (let v of data) {
+                    if (isFinite(v)) {
+                        minVal = Math.min(minVal, v);
+                        maxVal = Math.max(maxVal, v);
+                    }
+                }
+                if (minVal === Infinity) {            // all -Infinity / NaN
+                    minVal = spectrumType.includes('log') ? -100 : 0;
+                    maxVal = 0;
+                }
+                const range = maxVal - minVal || 1;
+
+                /*  map index → frequency  */
+                const maxFreq = this.audioBuffer.sampleRate / 2;
+                const graphW  = W - padding.left - padding.right;
+                const graphH  = H - padding.top  - padding.bottom;
+
+                ctx.beginPath();
+                for (let i = 0; i < data.length; i++) {
+                    const freq = (i / data.length) * maxFreq;
+                    const x = padding.left + (freq / maxFreq) * graphW;
+
+                    const val  = data[i];
+                    const y = padding.top + ((maxVal - val) / range) * graphH;
+
+                    if (i === 0) ctx.moveTo(x, y);
+                    else         ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+
 
             updateSpectrumGraph() {
                 if (!this.popupSampleRange) return;
-
                 const { start, end } = this.popupSampleRange;
                 const fftSize = parseInt(document.getElementById('popupFftSize').value);
-                const spectrumType = document.getElementById('popupSpectrumType').value;
-                
-                setTimeout(() => {
-                    const spectrumData = this.calculateAverageSpectrum(start, end, fftSize, spectrumType);
-                    this.drawSpectrumGraph(spectrumData, this.audioBuffer.sampleRate, fftSize, spectrumType);
-                }, 10);
+                const specTyp = document.getElementById('popupSpectrumType').value;
+
+                /* ----  compute spectra  ---- */
+                let d1 = this.calculateAverageSpectrum(start, end, fftSize, specTyp, this.audioBuffer);
+                let d2 = null;
+
+                if (this.dualMode && this.audioBuffer2) {
+                    if (this.popupBothFiles) {                          // BOTH  →  draw two curves
+                        d2 = this.calculateAverageSpectrum(start, end, fftSize, specTyp, this.audioBuffer2);
+                    } else if (this.contextClickFileIndex === 1) {      // THIS-FILE-ONLY on file-2
+                        d2 = this.calculateAverageSpectrum(start, end, fftSize, specTyp, this.audioBuffer2);
+                        d1 = null;                                        // disable blue curve
+                    }
+                    /* otherwise (contextClickFileIndex === 0) we keep d1 and leave d2 null → single blue curve */
+                }
+
+                this.drawSpectrumGraph(d1, this.audioBuffer.sampleRate, fftSize, specTyp, d2);
             }
+
+
+
+
+
+
 
             getFreqFromY(y, height, padding, maxFreq) {
                 const graphHeight = height - padding.top - padding.bottom;
@@ -767,6 +944,10 @@
 
             constructor() {
                 this.audioBuffer = null;
+                this.audioBuffer2    = null;   // second file
+                this.file2           = null;   // its File object
+                this.dualMode       = false;   // flag
+                this.contextClickFileIndex = 0;   // 0 = file 1, 1 = file 2
                 this.file = null;
                 this.popupSampleRange = null;
                 this.currentPage = 0;
@@ -800,7 +981,27 @@
                 this.loadDetailsState();
                 this.updateControlVisibility();
                 this.loadTheme();
+
+                // list of controls to remember
+                ['fftSize','windowType','windowLength','colorScheme','spectrumType','minDb','maxDb','hopLength','timeGridToggle','timeGridOrigin','timeGridSpacing','freqGridToggle','freqGridOrigin','freqGridSpacing','viewSpectrogram','viewWaveform','waveformAmplitudeScale','samplesPerPixel','dualModeToggle','theme'].forEach(this.persistControl);
+
             }
+
+            /* ----------  auto-save / restore  ---------- */
+            persistControl(id){
+                const el=document.getElementById(id);
+                if(!el) return;
+                const save=()=>{
+                    const v=el.type==='checkbox'?el.checked:el.value;
+                    localStorage.setItem(id, v);
+                };
+                el.addEventListener('input', save);
+                const v=localStorage.getItem(id);
+                if(v!==null){
+                    el.type==='checkbox'?el.checked=v==='true':el.value=v;
+                }
+            }
+
 
             loadTheme() {
                 const theme = localStorage.getItem('theme');
@@ -933,12 +1134,32 @@
                 }
             }
 
-           initializeEventListeners() {
+        initializeEventListeners() {
                 // --- HEADER & FILE ---
                 document.getElementById('theme-switcher')?.addEventListener('click', this.toggleTheme.bind(this));
                 document.getElementById('help-button')?.addEventListener('click', this.openHelpDialog.bind(this));
                 document.querySelector('#help-dialog .popup-close')?.addEventListener('click', this.closeHelpDialog.bind(this));
+
+                document.getElementById('dualModeToggle')?.addEventListener('change', e => {
+                    if (e.target.checked && !this.audioBuffer) {
+                        alert('Please load the first file before enabling dual mode.');
+                        e.target.checked = false;          // keep it off
+                        return;
+                    }
+                    this.dualMode = e.target.checked;
+                    document.getElementById('secondFileRow').style.display = this.dualMode ? 'flex' : 'none';
+                    if (!this.dualMode) {
+                        this.audioBuffer2 = null;
+                        this.file2        = null;
+                    }
+                    this.renderCurrentView();
+                });
+
+
+
+
                 document.getElementById('fileInput')?.addEventListener('change', this.loadFile.bind(this));
+                document.getElementById('fileInput2')?.addEventListener('change', this.loadFile2.bind(this));
                 document.getElementById('fileFormat')?.addEventListener('change', (e) => {
                     const rawOpts = document.getElementById('rawOptions');
                     if (rawOpts) rawOpts.style.display = e.target.value === 'raw' ? 'flex' : 'none';
@@ -979,6 +1200,55 @@
                         this.contextMenu.style.display = 'none';
                     }
                 });
+
+
+                window.addEventListener('keydown', e => {
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return; // ignore while editing
+                    const step = parseInt(document.getElementById('hopLength').value) || 256;
+                    const halfPage = Math.floor(this.samplesPerRow / 2);
+
+                    switch (e.key.toLowerCase()) {
+                        case 's':   // toggle spectrogram
+                            const spec = document.getElementById('viewSpectrogram');
+                            spec.checked = !spec.checked;
+                            this.updateControlVisibility();
+                            this.renderCurrentView();
+                            break;
+                        case 'w':   // toggle waveform
+                            const wav = document.getElementById('viewWaveform');
+                            wav.checked = !wav.checked;
+                            this.updateControlVisibility();
+                            this.renderCurrentView();
+                            break;
+                        case 'd':   // toggle dual mode
+                            const dual = document.getElementById('dualModeToggle');
+                            dual.checked = !dual.checked;
+                            dual.dispatchEvent(new Event('change'));
+                            break;
+                        case 'g':   // toggle time grid
+                            const tg = document.getElementById('timeGridToggle');
+                            tg.checked = !tg.checked;
+                            this.redrawAllOverlays();
+                            break;
+                        case 'arrowleft':  // nudge display left
+                            e.preventDefault();
+                            this.nudgeDisplay(-step*16);
+                            break;
+                        case 'arrowright': // nudge display right
+                            e.preventDefault();
+                            this.nudgeDisplay(step*16);
+                            break;
+                        case 't':           // toggle theme
+                            this.toggleTheme();
+                            break;
+                        case ' ':           // space-bar placeholder (play/pause ready)
+                e.preventDefault();
+                // future: playPause();
+                break;
+                    }
+                });
+
+
 
                 // --- MAIN DISPLAY CANVAS LISTENERS ---
                 // These are now added in updateControlVisibility after the elements are created.
@@ -1092,7 +1362,7 @@
                     document.getElementById('popupGridOrigin')?.addEventListener('input', this.updateSpectrumGraph.bind(this));
                     document.getElementById('popupGridSpacing')?.addEventListener('input', this.updateSpectrumGraph.bind(this));
                 }
-           }
+        }
 
             async loadFile(event) {
                 this.file = event.target.files[0];
@@ -1128,6 +1398,69 @@
                     this.hideLoadingOverlay();
                 }
             }
+
+
+            async loadFile2(event) {
+                if (!this.dualMode || !this.audioBuffer) return;
+                if (!this.dualMode) return;
+                this.file2 = event.target.files[0];
+                if (!this.file2) return;
+                this.showLoadingOverlay('Reading 2nd file …');
+                try {
+                    const ab = await this.file2.arrayBuffer();
+                    const fmt = document.getElementById('fileFormat').value;
+
+                    if (fmt === 'wav') {
+                /* ---  NEW : avoid resampling  --- */
+                const wavInfo = this.parseWavInfo(ab);
+                if (!wavInfo) throw new Error('Cannot parse 2nd WAV');
+                // use *same* sample-rate as 1st file → samples stay aligned
+                const targetSR = this.audioBuffer.sampleRate;
+                const offCtx   = new OfflineAudioContext(wavInfo.numChannels,
+                                            Math.round(wavInfo.numSamples * targetSR /             wavInfo.sampleRate),
+                                            targetSR);
+                // decode into a *temporary* context to get the raw PCM
+                const tempCtx  = new AudioContext();
+                const tempBuf  = await tempCtx.decodeAudioData(ab.slice(0));
+                // copy re-sampled (if SR differ) or original data
+                const len      = offCtx.length;
+                this.audioBuffer2 = offCtx.createBuffer(wavInfo.numChannels, len, targetSR);
+                for (let ch = 0; ch < wavInfo.numChannels; ++ch) {
+                    const src = tempBuf.getChannelData(ch);
+                    const dst = this.audioBuffer2.getChannelData(ch);
+                    // simple linear interpolation when SR differs
+                    const ratio = src.length / dst.length;
+                    for (let i = 0; i < dst.length; ++i) {
+                        const idx = i * ratio;
+                        const low = Math.floor(idx), high = Math.ceil(idx);
+                        const frac = idx - low;
+                        dst[i] = src[low] * (1 - frac) + src[high] * frac;
+                    }
+                }
+
+                    } else { // raw – use *same* parameters as file 1
+                        const sr  = parseInt(document.getElementById('rawSampleRate').value);
+                        const typ = document.getElementById('rawSampleType').value;
+                        this.audioBuffer2 = this.decodeRawData(ab, sr, typ);
+                    }
+                    this.renderCurrentView();
+                } catch (e) {
+                    this.showMessage('error', '2nd file: ' + e.message);
+                } finally {
+                    this.hideLoadingOverlay();
+                }
+            }
+
+
+
+            nudgeDisplay(deltaSamples){
+                const el = document.getElementById('displayStartSample');
+                const newStart = Math.max(0, parseInt(el.value) + deltaSamples);
+                el.value = newStart;
+                this.renderCurrentView();
+            }
+
+
 
             decodeRawData(arrayBuffer, sampleRate, sampleType) {
                 const numChannels = 1; // Assuming mono for raw data
@@ -1224,6 +1557,8 @@
             }
 
             renderCurrentView() {
+                // safety: fall back to single if we have no primary buffer
+                if (this.dualMode && !this.audioBuffer) this.dualMode = false;
                 if (!this.audioBuffer) {
                     this.showMessage("info", "No file loaded");
                     return;
@@ -1391,6 +1726,13 @@
             handleContextMenu(event) {
                 event.preventDefault();
                 this.contextMenu.innerHTML = '';
+
+                // dual display mouse trap - PFW
+                const wrapper = event.target.closest('.canvas-wrapper').parentElement; // labelled wrapper
+                this.contextClickFileIndex = Array.from(wrapper.parentElement.children)
+                                .indexOf(wrapper);   // 0 or 1
+
+
                 const sample = this.getSampleFromEvent(event);
                 if (sample === null) return;
                 const selStart = Math.min(this.selection.startSample, this.selection.endSample);
@@ -1399,7 +1741,7 @@
                 if (this.selection.startSample !== null && sample >= selStart && sample <= selEnd) {
                     this.contextMenu.innerHTML = `<div class="context-menu-item" data-action="show-spectrum-selection">Show Average Power Spectrum</div><div class="context-menu-divider"></div><div class="context-menu-item" data-action="save-selection">Save Selection as WAV...</div><div class="context-menu-divider"></div><div class="context-menu-item" data-action="copy-time">Copy Time Range</div><div class="context-menu-item" data-action="copy-samples">Copy Sample Range</div><div class="context-menu-divider"></div><div class="context-menu-item" data-action="set-grid-from-selection">Set Grid from Selection</div>`;
                 } else if (this.timeMarker.sample !== null && Math.abs(sample - this.timeMarker.sample) < markerThreshold) {
-                    this.contextMenu.innerHTML = `<div class="context-menu-item" data-action="show-spectrum-marker">Show Power Spectrum</div><div class="context-menu-divider"></div><div class="context-menu-item" data-action="copy-marker">Copy Marker Position</div><div class="context-menu-divider"></div><div class="context-menu-item" data-action="set-grid-origin-from-marker">Set Grid Origin from Marker</div><div class="context-menu-item" data-action="set-display-start-from-marker">Set Display Start Here</div>`;
+                    this.contextMenu.innerHTML = `<div class="context-menu-item" data-action="show-spectrum-both">Show Power Spectrum – both files</div><div class="context-menu-item" data-action="show-spectrum-this">Show Power Spectrum – this file only</div><div class="context-menu-divider"></div><div class="context-menu-item" data-action="copy-marker">Copy Marker Position</div><div class="context-menu-divider"></div><div class="context-menu-item" data-action="set-grid-origin-from-marker">Set Grid Origin from Marker</div><div class="context-menu-item" data-action="set-display-start-from-marker">Set Display Start Here</div>`;
                 } else { return; }
                 this.contextMenu.style.display = 'block';
                 this.contextMenu.style.left = `${event.clientX}px`;
@@ -1551,6 +1893,12 @@
                     case 'show-spectrum-selection':
                         this.showSpectrumPopup(selStart, selEnd);
                         break;
+                    case 'show-spectrum-both':
+                        this.showSpectrumPopup(selStart, selEnd, /*both*/ true);
+                        break;
+                    case 'show-spectrum-this':
+                        this.showSpectrumPopup(selStart, selEnd, /*both*/ false);
+                        break;
                     case 'save-selection': this.saveSelectionToFile(selStart, selEnd); break;
                     case 'copy-time':
                         textToCopy = `Start: ${(selStart / sampleRate).toFixed(6)}s, End: ${(selEnd / sampleRate).toFixed(6)}s`;
@@ -1635,41 +1983,85 @@
             }
 
             renderWaveformView(rows, width) {
-                const totalSamples = this.audioBuffer.length;
-                const displayStartSample = parseInt(document.getElementById('displayStartSample').value);
-                const startSampleOfPage = displayStartSample;
-                for (let i = 0; i < rows; i++) {
-                    const rowStartSample = startSampleOfPage + (i * this.samplesPerRow);
-                    if (rowStartSample >= totalSamples) break;
-                    const segment = this.audioBuffer.getChannelData(0).slice(rowStartSample, Math.min(rowStartSample + this.samplesPerRow, totalSamples));
-                    const canvases = this.createCanvasSet(i, rowStartSample, width, 150);
-                    if (canvases) this.drawWaveform(canvases.data, segment, this.samplesPerRow);
-                }
+
+                const displayStart = parseInt(document.getElementById('displayStartSample').value);
+                const startSampleOfPage = displayStart;
+                const buffers = (this.dualMode && this.audioBuffer2)
+                                    ? [this.audioBuffer, this.audioBuffer2]
+                                    : [this.audioBuffer];
+
+                buffers.forEach((buf, idx) => {
+                    const label = idx === 0 ? (this.file?.name || 'File 1')
+                            : (this.file2?.name || 'File 2');
+                    const parentWrap = this.makeLabelledWrapper(this.waveformView,
+                                                label,
+                                                idx !== 0);
+
+                    for (let i = 0; i < rows; i++) {
+                        const rowStartSample = startSampleOfPage + (i * this.samplesPerRow);
+                        if (rowStartSample >= buf.length) break;
+                        const segment = buf.getChannelData(0).slice(rowStartSample,
+                                    Math.min(rowStartSample + this.samplesPerRow, buf.length));
+                        const canvases = this.createCanvasSet(i * 1000 + idx,
+                                            rowStartSample,
+                                            width,
+                                            150);
+                        if (canvases) {
+                            this.drawWaveform(canvases.data, segment, this.samplesPerRow);
+                            parentWrap.appendChild(canvases.data.parentElement);
+                        }
+                    }
+                });
+
             }
 
             renderSpectrogramView(rows, width) {
-                const displayStartSample = parseInt(document.getElementById('displayStartSample').value);
-                const startSampleOfPage = displayStartSample;
-                let pageMinDb = Infinity, pageMaxDb = -Infinity;
+                const displayStart = parseInt(document.getElementById('displayStartSample').value);
+                const startSampleOfPage = displayStart;
+                let pageMinDb =  Infinity, pageMaxDb = -Infinity;
                 const pageRowInfo = [];
                 const fftSize = parseInt(document.getElementById('fftSize').value);
                 const hopLength = parseInt(document.getElementById('hopLength').value);
                 const expectedNumTimeBins = Math.floor((this.samplesPerRow - fftSize) / hopLength) + 1;
                 const canvasHeight = fftSize / 2;
 
-                for (let i = 0; i < rows; i++) {
-                    const rowStartSample = startSampleOfPage + (i * this.samplesPerRow);
-                    if (rowStartSample >= this.audioBuffer.length) break;
-                    const segment = this.audioBuffer.getChannelData(0).slice(rowStartSample, Math.min(rowStartSample + this.samplesPerRow, this.audioBuffer.length));
-                    const canvases = this.createCanvasSet(i, rowStartSample, width, canvasHeight);
-                    if (canvases) {
-                        const { spectrogram, minDb, maxDb } = this.generateSpectrogram(segment);
-                        pageMinDb = Math.min(pageMinDb, minDb);
-                        pageMaxDb = Math.max(pageMaxDb, maxDb);
-                        pageRowInfo.push({ dataCanvas: canvases.data, bins: spectrogram });
+                /* ----------  NEW : draw both buffers  ---------- */
+                const buffers = this.dualMode && this.audioBuffer2
+                        ? [this.audioBuffer, this.audioBuffer2]
+                        : [this.audioBuffer];
+
+                buffers.forEach((buf, idx) => {
+                    /* label */
+                    const label = idx === 0 ? (this.file?.name || 'File 1')
+                                            : (this.file2?.name || 'File 2');
+                    const parentWrap = this.makeLabelledWrapper(this.spectrogramView,
+                                                label,
+                                                idx !== 0);   // gap after 1st
+
+                    for (let i = 0; i < rows; i++) {
+                        const rowStartSample = startSampleOfPage + (i * this.samplesPerRow);
+                        if (rowStartSample >= buf.length) break;
+                        const segment = buf.getChannelData(0).slice(rowStartSample,
+                                    Math.min(rowStartSample + this.samplesPerRow, buf.length));
+                        const canvases = this.createCanvasSet(i * 1000 + idx,
+                                            rowStartSample,
+                                            width,
+                                            canvasHeight);
+                        if (canvases) {
+                            const {spectrogram, minDb, maxDb} = this.generateSpectrogram(segment);
+                            pageMinDb = Math.min(pageMinDb, minDb);
+                            pageMaxDb = Math.max(pageMaxDb, maxDb);
+                            pageRowInfo.push({dataCanvas: canvases.data, bins: spectrogram});
+                            parentWrap.appendChild(canvases.data.parentElement); // move wrapper into labelled                 box
+                        }
                     }
-                }
-                pageRowInfo.forEach(info => this.drawSpectrogram(info.dataCanvas, info.bins, pageMinDb, pageMaxDb, expectedNumTimeBins));
+                });
+
+                pageRowInfo.forEach(info => this.drawSpectrogram(info.dataCanvas,
+                                                info.bins,
+                                                pageMinDb,
+                                                pageMaxDb,
+                                                expectedNumTimeBins));
             }
 
             createCanvasSet(rowIndex, startSample, canvasWidth, canvasHeight) {
@@ -1967,7 +2359,7 @@
                         
                         // Draw origin line
                         if (freqGridOrigin >= 0 && freqGridOrigin <= maxFreq) {
-                             const oldLineWidth = ctx.lineWidth;
+                            const oldLineWidth = ctx.lineWidth;
                             ctx.lineWidth = 2; // Make origin line thicker
                             drawFreqLine(freqGridOrigin);
                             ctx.lineWidth = oldLineWidth;
